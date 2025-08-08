@@ -2,8 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VRショッピングモール v0.1 – Three.js</title>
+  <meta name="description" content="3D空間でウィンドウショッピング体験を再現したWebデモ。Three.js製。" />
+  <title>VRショッピングモール – Web3D/Three.js Demo</title>
+  <meta property="og:title" content="VRショッピングモール">
+  <meta property="og:image" content="og.png">
+  <link rel="icon" href="favicon.ico">
   <style>
     html, body { height: 100%; margin: 0; background:#0b0e13; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", Noto Sans, sans-serif; }
     #app { position: fixed; inset: 0; }
@@ -175,17 +178,29 @@
     demoBooths.forEach(addBooth);
 
     // ---- interactions ----
-    function onClick(e) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(clickable, false);
-      if (hits.length) {
-        const { url, title } = hits[0].object.userData || {};
-        if (url) window.open(url, '_blank', 'noopener');
-      }
+    function openDetail({title, image, url}) {
+  const p = document.getElementById('detail');
+  document.getElementById('dTitle').textContent = title || 'Item';
+  document.getElementById('dImg').src = image || '';
+  const link = document.getElementById('dLink');
+  link.href = url || '#';
+  p.style.transform = 'translateX(0%)';
+}
+document.getElementById('closeDetail').onclick = () => {
+  document.getElementById('detail').style.transform = 'translateX(100%)';
+};
+      function onClick(e) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(clickable, false);
+    if (hits.length) {
+      const ud = hits[0].object.userData || {};
+      // ここでパネルを開く（新規タブ直行はやめる/リンクボタンは残す）
+      openDetail({ title: ud.title, image: hits[0].object.material.map?.image?.src, url: ud.url });
     }
+  }
     renderer.domElement.addEventListener('click', onClick);
 
     // resize
@@ -214,5 +229,22 @@
     }
     animate();
   </script>
+  <div id="detail" style="
+  position:fixed; top:0; right:0; width:320px; height:100%;
+  background:rgba(0,0,0,.75); backdrop-filter:blur(6px);
+  color:#e5e7eb; border-left:1px solid rgba(255,255,255,.1);
+  transform:translateX(100%); transition:.25s ease; padding:16px; box-sizing:border-box;
+">
+  <button id="closeDetail" style="float:right">✕</button>
+  <h3 id="dTitle" style="margin:12px 0 8px 0;">Title</h3>
+  <img id="dImg" src="" alt="" style="width:100%; border-radius:8px;">
+  <div style="margin-top:12px; font-size:14px; opacity:.9" id="dDesc">
+    外部サイトで詳細を確認できます。
+  </div>
+  <a id="dLink" href="#" target="_blank" rel="noopener"
+     style="display:inline-block;margin-top:14px;padding:8px 10px;border:1px solid rgba(255,255,255,.2);border-radius:10px;text-decoration:none;color:#e5e7eb">
+     外部で見る
+  </a>
+</div>
 </body>
 </html>
