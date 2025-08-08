@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VRショッピングモール v0.1 – Three.js</title>
+  <style>
+    html, body { height: 100%; margin: 0; background:#0b0e13; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Yu Gothic", Noto Sans, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    .hud { position: fixed; left: 12px; bottom: 12px; color: #cbd5e1; background: rgba(0,0,0,.45); padding: 10px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; backdrop-filter: blur(6px); line-height: 1.4; }
+    .hud strong { color: #e2e8f0; }
+    .topbar { position: fixed; left: 12px; top: 12px; color:#e2e8f0; background: rgba(0,0,0,.45); padding: 10px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; backdrop-filter: blur(6px); display:flex; gap:8px; align-items:center; }
+    .btn { cursor:pointer; border:1px solid rgba(255,255,255,.12); background:#111827; color:#e5e7eb; padding:6px 10px; border-radius:10px; }
+    .btn:hover { background:#1f2937; }
+    .credit { position: fixed; right: 12px; bottom: 12px; color:#94a3b8; font-size:12px; opacity:.8 }
+    a { color:#93c5fd; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="topbar">
+    <span>🛍️ VRショッピングモール v0.1</span>
+    <button id="resetCam" class="btn">視点リセット</button>
+  </div>
+  <div class="hud">
+    <div>左ドラッグ：視点回転 ／ 右ドラッグ：平行移動 ／ ホイール：ズーム</div>
+    <div>商品パネルを<strong>クリック</strong>で外部サイトを新規タブで開きます</div>
+  </div>
+  <div class="credit">Made with <a href="https://threejs.org/" target="_blank" rel="noreferrer">Three.js</a></div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    // ---- basic setup ----
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.getElementById('app').appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0b0e13');
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 4, 14);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 2, 0);
+
+    // lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(5, 10, 7);
+    dir.castShadow = true;
+    scene.add(dir);
+
+    // floor (mall tile)
+    const floorGeo = new THREE.PlaneGeometry(60, 40, 1, 1);
+    const floorMat = new THREE.MeshStandardMaterial({ color: '#1b2432', metalness: 0.1, roughness: 0.9 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // subtle grid lines for guidance
+    const grid = new THREE.GridHelper(60, 30, 0x334155, 0x1f2937);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // mall walls (simple frames)
+    const wallMat = new THREE.MeshStandardMaterial({ color: '#111827', metalness: 0.2, roughness: 0.8 });
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 0.5), wallMat);
+    backWall.position.set(0, 3, -20);
+    const frontWall = new THREE.Mesh(new THREE.BoxGeometry(60, 6, 0.5), wallMat);
+    frontWall.position.set(0, 3, 20);
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, 40), wallMat);
+    leftWall.position.set(-30, 3, 0);
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, 40), wallMat);
+    rightWall.position.set(30, 3, 0);
+    scene.add(backWall, frontWall, leftWall, rightWall);
+
+    // ---- utility: label sprite from canvas ----
+    function makeLabel(text) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512; canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0b0e13';
+      ctx.fillRect(0,0,canvas.width, canvas.height);
+      ctx.font = 'bold 48px system-ui, sans-serif';
+      ctx.fillStyle = '#e5e7eb';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width/2, canvas.height/2);
+      const tex = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(6, 1.5, 1);
+      return sprite;
+    }
+
+    // ---- shop booth factory ----
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const clickable = [];
+
+    function addBooth({ x, z, name, items }) {
+      const booth = new THREE.Group();
+
+      // booth base
+      const base = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, 4), new THREE.MeshStandardMaterial({ color: '#0f172a', metalness:0.1, roughness:0.9 }));
+      base.position.set(x, 0.1, z);
+      base.receiveShadow = true;
+      booth.add(base);
+
+      // back panel
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 0.2), new THREE.MeshStandardMaterial({ color: '#1f2937', metalness:0.2, roughness:0.8 }));
+      panel.position.set(x, 1.6, z - 2);
+      panel.castShadow = panel.receiveShadow = true;
+      booth.add(panel);
+
+      // label
+      const label = makeLabel(name);
+      label.position.set(x, 3.2, z - 2.1);
+      booth.add(label);
+
+      // item panels (image quads that open links)
+      const loader = new THREE.TextureLoader();
+      const cols = items.length;
+      const spacing = 10 / (cols + 1);
+      items.forEach((it, i) => {
+        const w = 2.2, h = 2.2;
+        const geo = new THREE.PlaneGeometry(w, h);
+        const tex = loader.load(it.image);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const mat = new THREE.MeshBasicMaterial({ map: tex });
+        const quad = new THREE.Mesh(geo, mat);
+        quad.position.set(x - 5 + spacing * (i + 1), 1.6, z - 1.95);
+        quad.userData = { url: it.url, title: it.title };
+        clickable.push(quad);
+        booth.add(quad);
+      });
+
+      scene.add(booth);
+    }
+
+    // ---- demo data (置き換え想定) ----
+    const demoBooths = [
+      {
+        x: -15, z: -10, name: 'Gadgets',
+        items: [
+          { title: 'Wireless Headphones', image: 'https://picsum.photos/seed/headphones/600/600', url: 'https://www.amazon.co.jp/s?k=headphones' },
+          { title: 'Smartwatch', image: 'https://picsum.photos/seed/watch/600/600', url: 'https://www.amazon.co.jp/s?k=smartwatch' },
+          { title: 'Gaming Mouse', image: 'https://picsum.photos/seed/mouse/600/600', url: 'https://www.amazon.co.jp/s?k=gaming+mouse' },
+        ],
+      },
+      {
+        x: 0, z: 0, name: 'Books',
+        items: [
+          { title: 'Tech Books', image: 'https://picsum.photos/seed/books/600/600', url: 'https://www.amazon.co.jp/s?k=tech+books' },
+          { title: 'Design', image: 'https://picsum.photos/seed/design/600/600', url: 'https://www.amazon.co.jp/s?k=design+books' },
+          { title: 'Fiction', image: 'https://picsum.photos/seed/novel/600/600', url: 'https://www.amazon.co.jp/s?k=novel' },
+        ],
+      },
+      {
+        x: 15, z: 10, name: 'Fashion',
+        items: [
+          { title: 'Sneakers', image: 'https://picsum.photos/seed/sneakers/600/600', url: 'https://www.amazon.co.jp/s?k=sneakers' },
+          { title: 'Backpacks', image: 'https://picsum.photos/seed/bag/600/600', url: 'https://www.amazon.co.jp/s?k=backpack' },
+          { title: 'Hats', image: 'https://picsum.photos/seed/hat/600/600', url: 'https://www.amazon.co.jp/s?k=hat' },
+        ],
+      },
+    ];
+
+    demoBooths.forEach(addBooth);
+
+    // ---- interactions ----
+    function onClick(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(clickable, false);
+      if (hits.length) {
+        const { url, title } = hits[0].object.userData || {};
+        if (url) window.open(url, '_blank', 'noopener');
+      }
+    }
+    renderer.domElement.addEventListener('click', onClick);
+
+    // resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // reset camera button
+    document.getElementById('resetCam').addEventListener('click', () => {
+      camera.position.set(0, 4, 14);
+      controls.target.set(0, 2, 0);
+      controls.update();
+    });
+
+    // simple ambient animation
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      dir.position.x = Math.sin(t * 0.2) * 8;
+      dir.position.z = Math.cos(t * 0.2) * 8;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
