@@ -22,19 +22,19 @@
 <body>
   <div id="app"></div>
   <div class="topbar">
-    <span>🛍️ VRショッピングモール v0.1</span>
+    <span>🛍️ VRショッピングモール v0.2</span>
     <button id="resetCam" class="btn">視点リセット</button>
   </div>
   <div class="hud">
     <div>左ドラッグ：視点回転 ／ 右ドラッグ：平行移動 ／ ホイール：ズーム</div>
-    <div>商品パネルを<strong>クリック</strong>で外部サイトを新規タブで開きます</div>
+    <div>商品パネルを<strong>クリック</strong>で詳細パネルが開きます</div>
   </div>
   <div class="credit">Made with <a href="https://threejs.org/" target="_blank" rel="noreferrer">Three.js</a></div>
 
- <script type="module">
-  import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-  import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
-
+  <script type="module">
+    // ★ ここがポイント：CDNのフルURLでESMを読み込む
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
     // ---- basic setup ----
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -140,7 +140,7 @@
         const mat = new THREE.MeshBasicMaterial({ map: tex });
         const quad = new THREE.Mesh(geo, mat);
         quad.position.set(x - 5 + spacing * (i + 1), 1.6, z - 1.95);
-        quad.userData = { url: it.url, title: it.title };
+        quad.userData = { url: it.url, title: it.title, image: it.image };
         clickable.push(quad);
         booth.add(quad);
       });
@@ -180,28 +180,28 @@
 
     // ---- interactions ----
     function openDetail({title, image, url}) {
-  const p = document.getElementById('detail');
-  document.getElementById('dTitle').textContent = title || 'Item';
-  document.getElementById('dImg').src = image || '';
-  const link = document.getElementById('dLink');
-  link.href = url || '#';
-  p.style.transform = 'translateX(0%)';
-}
-document.getElementById('closeDetail').onclick = () => {
-  document.getElementById('detail').style.transform = 'translateX(100%)';
-};
-      function onClick(e) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(clickable, false);
-    if (hits.length) {
-      const ud = hits[0].object.userData || {};
-      // ここでパネルを開く（新規タブ直行はやめる/リンクボタンは残す）
-      openDetail({ title: ud.title, image: hits[0].object.material.map?.image?.src, url: ud.url });
+      const p = document.getElementById('detail');
+      document.getElementById('dTitle').textContent = title || 'Item';
+      document.getElementById('dImg').src = image || '';
+      const link = document.getElementById('dLink');
+      link.href = url || '#';
+      p.style.transform = 'translateX(0%)';
     }
-  }
+    document.getElementById('closeDetail').onclick = () => {
+      document.getElementById('detail').style.transform = 'translateX(100%)';
+    };
+
+    function onClick(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(clickable, false);
+      if (hits.length) {
+        const ud = hits[0].object.userData || {};
+        openDetail({ title: ud.title, image: ud.image, url: ud.url });
+      }
+    }
     renderer.domElement.addEventListener('click', onClick);
 
     // resize
@@ -230,22 +230,24 @@ document.getElementById('closeDetail').onclick = () => {
     }
     animate();
   </script>
+
+  <!-- 右サイドの詳細パネル -->
   <div id="detail" style="
-  position:fixed; top:0; right:0; width:320px; height:100%;
-  background:rgba(0,0,0,.75); backdrop-filter:blur(6px);
-  color:#e5e7eb; border-left:1px solid rgba(255,255,255,.1);
-  transform:translateX(100%); transition:.25s ease; padding:16px; box-sizing:border-box;
-">
-  <button id="closeDetail" style="float:right">✕</button>
-  <h3 id="dTitle" style="margin:12px 0 8px 0;">Title</h3>
-  <img id="dImg" src="" alt="" style="width:100%; border-radius:8px;">
-  <div style="margin-top:12px; font-size:14px; opacity:.9" id="dDesc">
-    外部サイトで詳細を確認できます。
+    position:fixed; top:0; right:0; width:320px; height:100%;
+    background:rgba(0,0,0,.75); backdrop-filter:blur(6px);
+    color:#e5e7eb; border-left:1px solid rgba(255,255,255,.1);
+    transform:translateX(100%); transition:.25s ease; padding:16px; box-sizing:border-box;
+  ">
+    <button id="closeDetail" style="float:right">✕</button>
+    <h3 id="dTitle" style="margin:12px 0 8px 0;">Title</h3>
+    <img id="dImg" src="" alt="" style="width:100%; border-radius:8px;">
+    <div style="margin-top:12px; font-size:14px; opacity:.9" id="dDesc">
+      外部サイトで詳細を確認できます。
+    </div>
+    <a id="dLink" href="#" target="_blank" rel="noopener"
+      style="display:inline-block;margin-top:14px;padding:8px 10px;border:1px solid rgba(255,255,255,.2);border-radius:10px;text-decoration:none;color:#e5e7eb">
+      外部で見る
+    </a>
   </div>
-  <a id="dLink" href="#" target="_blank" rel="noopener"
-     style="display:inline-block;margin-top:14px;padding:8px 10px;border:1px solid rgba(255,255,255,.2);border-radius:10px;text-decoration:none;color:#e5e7eb">
-     外部で見る
-  </a>
-</div>
 </body>
 </html>
