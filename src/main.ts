@@ -244,19 +244,26 @@ ready(() => {
       const r = await fetch("https://vr-mall-api.vercel.app/api/concierge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: q,
-          context: { where: "entrance" }, // 位置など任意
-        }),
+        body: JSON.stringify({ message: q, context: { where: "entrance" } }),
       });
-      const data = await r.json();
+  
+      let data: any = null;
+      try { data = await r.json(); } catch {}
+  
+      if (!r.ok) {
+        throw new Error(
+          (data && (data.error || data.detail || JSON.stringify(data))) || r.statusText
+        );
+      }
+  
       alert(data?.reply ?? "（回答を取得できませんでした）");
-    } catch (e) {
-      alert("通信エラー: " + (e as Error).message);
+    } catch (e: any) {
+      alert("通信エラー: " + (e?.message || e));
     } finally {
       askBtn.disabled = false;
       askBtn.textContent = "AIに聞く";
     }
   });
+
 
 });
