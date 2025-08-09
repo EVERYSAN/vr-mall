@@ -9,3 +9,6 @@ html, body { height:100%; margin:0; background:#0f1623; color:#e5e7eb; font-fami
 .desc { font-size:14px; opacity:.9; margin:6px 0 0 }
 .hint { position:fixed; left:12px; bottom:12px; background:rgba(0,0,0,.5); padding:8px 10px; border:1px solid rgba(255,255,255,.12); border-radius:10px; backdrop-filter:blur(6px); font-size:13px }
 @media (max-width: 600px){ .ui{ left:8px; right:8px; top:8px; flex-wrap:wrap } .btn{ padding:10px 12px; font-size:16px } }
+/* three.js のキャンバスが確実に全面表示になるよう固定 */
+#app canvas { display:block; position:fixed; inset:0; width:100vw; height:100vh; }
+
