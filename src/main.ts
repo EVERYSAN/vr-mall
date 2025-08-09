@@ -1,3 +1,5 @@
+console.log('boot main.ts');  // これがブラウザConsoleに出ればJSは実行されている
+
 // ===== AI Concierge（OpenAI経由で案内） =====
 const AI_ENDPOINT = "https://vr-mall-api.vercel.app/api/concierge"; // ← あなたのVercelドメインに合わせて
 
