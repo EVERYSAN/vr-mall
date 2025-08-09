@@ -241,7 +241,7 @@ ready(() => {
     askBtn.disabled = true;
     askBtn.textContent = "問い合わせ中…";
     try {
-      const r = await fetch("https://vr-mall-api.vercel.app/api/chat", {
+      const r = await fetch("https://vr-mall-api.vercel.app/api/concierge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
