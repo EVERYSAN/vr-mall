@@ -232,4 +232,31 @@ ready(() => {
     controls.update();
     renderer.render(scene, camera);
   })();
+  // ---- AIに聞く（VercelのAPIへPOST） ----
+  const askBtn = document.getElementById("askAI") as HTMLButtonElement | null;
+  askBtn?.addEventListener("click", async () => {
+    const q = window.prompt("何をお探しですか？（例：初心者向けのプログラミング本）");
+    if (!q) return;
+  
+    askBtn.disabled = true;
+    askBtn.textContent = "問い合わせ中…";
+    try {
+      const r = await fetch("https://vr-mall-api.vercel.app/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: q,
+          context: { where: "entrance" }, // 位置など任意
+        }),
+      });
+      const data = await r.json();
+      alert(data?.reply ?? "（回答を取得できませんでした）");
+    } catch (e) {
+      alert("通信エラー: " + (e as Error).message);
+    } finally {
+      askBtn.disabled = false;
+      askBtn.textContent = "AIに聞く";
+    }
+  });
+
 });
