@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VRショッピングモール – Corridor</title>
+  <meta name="description" content="通路型のウィンドウショッピング体験デモ（Three.js + TS + Vite）">
+  <link rel="stylesheet" href="/vr-mall/src/styles.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <div class="ui">
+    <strong>VRショッピングモール – Corridor v2</strong>
+    <button id="goEntrance" class="btn">入口へ</button>
+    <button id="goBooks" class="btn">本屋へ</button>
+    <button id="reset" class="btn">視点リセット</button>
+  </div>
+
+  <!-- 右サイド詳細パネル（先に置く） -->
+  <aside id="detail" class="side">
+    <button id="closeDetail" class="btn btn-small">✕</button>
+    <h3 id="dTitle">Item</h3>
+    <img id="dImg" alt="">
+    <p id="dPrice" class="price">¥0</p>
+    <p id="dDesc" class="desc">説明</p>
+    <a id="dLink" target="_blank" rel="noopener" class="btn">外部で見る</a>
+  </aside>
+
+  <script type="module" src="/vr-mall/src/main.ts"></script>
+</body>
+</html>
