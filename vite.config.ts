@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
+
 export default defineConfig({
-  base: "/vr-mall/",   // ← 必ずこの形
-  plugins: [vue()],
+  // GitHub Pages で /vr-mall/ 配下に置かれるため必須
+  base: "/vr-mall/",
 });
