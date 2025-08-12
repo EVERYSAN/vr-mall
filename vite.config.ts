@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 
+// GitHub Pages のプロジェクトページ公開用（リポジトリ名に合わせて変更）
 export default defineConfig({
-  // GitHub Pages で /vr-mall/ 配下に置かれるため必須
   base: "/vr-mall/",
 });
