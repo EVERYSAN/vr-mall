@@ -4,10 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VRショッピングモール – Corridor</title>
-  <meta name="description" content="通路型のウィンドウショッピング体験デモ（Three.js + TS + Vite）">
+  <meta name="description" content="通路の左右に店舗が並ぶウィンドウショッピング体験デモ（Three.js + TS + Vite）">
   <link rel="stylesheet" href="./src/styles.css">
-  <script type="module" src="./src/main.ts"></script>
-
 </head>
 <body>
   <div id="app"></div>
@@ -20,7 +18,7 @@
     <button id="askAI" class="btn">AIに聞く</button>
   </div>
 
-  <!-- 右サイド詳細パネル（先に置く） -->
+  <!-- 右サイド詳細パネル -->
   <aside id="detail" class="side">
     <button id="closeDetail" class="btn btn-small">✕</button>
     <h3 id="dTitle">Item</h3>
@@ -29,5 +27,7 @@
     <p id="dDesc" class="desc">説明</p>
     <a id="dLink" target="_blank" rel="noopener" class="btn">外部で見る</a>
   </aside>
+
+  <script type="module" src="./src/main.ts"></script>
 </body>
 </html>
