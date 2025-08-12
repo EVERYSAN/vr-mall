@@ -5,17 +5,18 @@ export type Item = {
   image: string;
   url: string;
 };
+
 export type Booth = {
-  side: "left" | "right"; // 通路の左/右
-  z: number;              // 通路に沿った前後位置
-  name: string;           // 店名
+  side: "left" | "right";  // 通路の左/右
+  z: number;               // 通路に沿った前後位置
+  name: string;            // 店名
   items: Item[];
 };
 
-// ダミーデータ（画像はpicsum、リンクはAmazon検索）
+// ダミーデータ（画像は picsum、リンクは Amazon 検索）
 export const BOOTHS: Booth[] = [
   {
-    side: "left", z: -10, name: "Gadgets",
+    side: "left", z: -16, name: "Gadgets",
     items: [
       { title:"Wireless Headphones", price:"¥12,800", desc:"ANC / 30h再生", image:"https://picsum.photos/seed/headphones/600/600", url:"https://www.amazon.co.jp/s?k=headphones" },
       { title:"Smartwatch",          price:"¥18,600", desc:"心拍/睡眠/通知", image:"https://picsum.photos/seed/watch/600/600",      url:"https://www.amazon.co.jp/s?k=smartwatch" },
@@ -23,7 +24,7 @@ export const BOOTHS: Booth[] = [
     ],
   },
   {
-    side: "right", z: 0, name: "Books",
+    side: "right", z: -2, name: "Books",
     items: [
       { title:"Tech Books", price:"¥3,300", desc:"エンジニア向け良書", image:"https://picsum.photos/seed/books/600/600",  url:"https://www.amazon.co.jp/s?k=tech+books" },
       { title:"Design",     price:"¥2,640", desc:"UI/UX / 配色",       image:"https://picsum.photos/seed/design/600/600", url:"https://www.amazon.co.jp/s?k=design+books" },
