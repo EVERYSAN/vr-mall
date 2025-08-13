@@ -2,17 +2,14 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
-# GitHub Pages 用の推奨 permission 設定
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 同時実行を抑止（連続 push での競合防止）
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -21,26 +18,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: npm
-
-      - name: Install dependencies
-        run: |
-          npm install
-          # GUI をビルド時に含める（未インストール時でも確実に入るよう追加入れ）
-          npm install lil-gui --save
-
-      # もし Vite の base が未設定なら vite.config.ts に base を設定してください
-      # 例) base: '/vr-mall/' （リポジトリ名が vr-mall の場合）
+          cache: 'npm'
+      - name: Install
+        run: npm ci
       - name: Build
         run: npm run build
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -53,6 +39,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         id: deploy
         uses: actions/deploy-pages@v4
