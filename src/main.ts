@@ -90,74 +90,102 @@ ready(() => {
    * x は固定、z で前後。壁（正面）は常に中心 x=0 向き。
    */
   function addBooth({ side, z, name, items }: Booth) {
+    // 左右のレーン：左=-10, 右=+10 に配置
+    const x = side === "left" ? -10 : 10;
     const group = new THREE.Group();
-
-    // 店の基準 x（左は負、右は正）
-    const baseX = side === "left"
-      ? - (CORRIDOR_HALF - BOOTH_DEPTH * 0.5)
-      : + (CORRIDOR_HALF - BOOTH_DEPTH * 0.5);
-
-    // ベース（床のひさし）
+  
+    // 台座
     const base = new THREE.Mesh(
-      new THREE.BoxGeometry(7, 0.18, 4.2),
-      new THREE.MeshStandardMaterial({ color: 0x8fa3b3, roughness: 1 })
+      new THREE.BoxGeometry(10, 0.2, 4),
+      new THREE.MeshStandardMaterial({ color: 0x8b98a7, roughness: 1 })
     );
-    base.position.set(baseX, 0.09, z);
+    base.position.set(x, 0.1, z);
     base.receiveShadow = true;
     group.add(base);
-
-    // 正面の壁（中心へ向けて回転）
-    const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(7, 3.2, 0.18),
-      new THREE.MeshStandardMaterial({ color: 0x0f131a, roughness: 1 })
+  
+    // 柱
+    const pillar = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 6, 1.1),
+      new THREE.MeshStandardMaterial({ color: 0x5f6d7a, roughness: 1 })
     );
-    wall.position.set(baseX, 1.7, z);
-    wall.rotation.y = side === "left" ? Math.PI/2 : -Math.PI/2;
-    wall.castShadow = wall.receiveShadow = true;
-    group.add(wall);
-
-    // 看板
-    const label = labelSprite(name);
-    label.position.set(baseX, LABEL_HEIGHT, z + (side === "left" ? 0.02 : -0.02));
-    label.center.set(0.5, 0); // 下基準
-    label.material.rotation = side === "left" ? Math.PI/2 : -Math.PI/2;
+    pillar.position.set(x, 3, z);
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    group.add(pillar);
+  
+    // ── 看板（全ブース同じ向きに） ─────────────────────
+    // Canvas で横書き→板ポリを90度回して縦っぽく見せます
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 512;
+    labelCanvas.height = 128;
+    const lctx = labelCanvas.getContext("2d")!;
+    lctx.fillStyle = "#5f6d7a";
+    lctx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+    lctx.font = "bold 80px system-ui, sans-serif";
+    lctx.fillStyle = "#ffffff";
+    lctx.textAlign = "center";
+    lctx.textBaseline = "middle";
+    lctx.fillText(name, labelCanvas.width / 2, labelCanvas.height / 2);
+  
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    labelTex.colorSpace = THREE.SRGBColorSpace;
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.8, 7.2),
+      new THREE.MeshBasicMaterial({ map: labelTex, toneMapped: false, side: THREE.DoubleSide })
+    );
+    // 柱の手前（通路側）に寄せる
+    const towardCenterX = side === "left" ? x + 0.8 : x - 0.8;
+    label.position.set(towardCenterX, 3.4, z);
+  
+    // ★ ポイント：向きを全ブースで統一（通路方向＝+Zに向ける）
+    // すべて同じ向き：通路に沿って縦置き（横から見たときに文字が読める）
+    // 横向きに板を回して縦看板っぽく
+    label.rotation.y = Math.PI / 2;   // ← 左右どちらでも固定で同じ向き
     group.add(label);
-
-    // 商品パネル（壁面に貼る）
+  
+    // ── 商品パネル（通路の中心に向ける＝両側で対称） ────────
     const loader = new THREE.TextureLoader();
-    const spacing = 7 / (items.length + 1);
-    items.forEach((it, i) => {
-      const tex = loader.load(it.image);
-      (tex as any).colorSpace = (THREE as any).SRGBColorSpace;
-      const quad = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.6, 1.6),
-        new THREE.MeshBasicMaterial({ map: tex, toneMapped:false })
-      );
-
-      // 壁の局所座標に合わせてオフセット配置
-      const u = -3.5 + spacing * (i + 1);
-      // 左側は +X 方向へ面、右側は -X 方向へ面
-      if (side === "left") {
-        quad.position.set(baseX + 0.11, 1.6, z + u);
-        quad.rotation.y = Math.PI/2;
-      } else {
-        quad.position.set(baseX - 0.11, 1.6, z - u);
-        quad.rotation.y = -Math.PI/2;
-      }
-      quad.userData = it;
-      clickable.push(quad);
-      group.add(quad);
-    });
-
+    const imgPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 2.2),
+      new THREE.MeshBasicMaterial({ color: 0x000000 })
+    );
+    // パネルの土台（見栄え）
+    const panelBack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 2.6, 2.6),
+      new THREE.MeshStandardMaterial({ color: 0x111519, roughness: 0.6 })
+    );
+  
+    const panelX = side === "left" ? x + 2.2 : x - 2.2;
+    imgPanel.position.set(panelX, 1.6, z);
+    panelBack.position.set(panelX, 1.6, z);
+  
+    // ★ ポイント：パネルは通路の中心に向ける（左右で対称）
+    imgPanel.rotation.y = side === "left" ? -Math.PI / 2 : Math.PI / 2;
+    panelBack.rotation.y = imgPanel.rotation.y;
+  
+    // 1枚目だけ表示（複数にしたければ forEach で）
+    if (items[0]) {
+      const tex = loader.load(items[0].image);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      (imgPanel.material as THREE.MeshBasicMaterial).map = tex;
+      (imgPanel.material as THREE.MeshBasicMaterial).toneMapped = false;
+      imgPanel.userData = items[0]; // クリック用
+    }
+  
+    clickable.push(imgPanel);
+    group.add(panelBack, imgPanel);
+  
     scene.add(group);
-
-    // この店の「正面から見る」時の注視点（壁の中央）
-    const front = new THREE.Vector3(baseX, 1.6, z);
-    BUILT.push({ name, side, z, front });
+  
+    // 本屋のテレポ位置（入口/本屋ボタン用）
+    if (name === "Books") {
+      booksTeleport = {
+        pos: new THREE.Vector3(0, 2.8, z - 10),
+        tgt: new THREE.Vector3(x, 2.2, z),
+      };
+    }
   }
 
-  // 既存 BOOTHS をそのまま突っ込む（z だけ綺麗に整列してる前提）
-  BOOTHS.forEach(addBooth);
 
   // ====== 商品ディテールパネル ======
   function openDetail({ title, price, desc, image, url }: Item) {
