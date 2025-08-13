@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import GUI from "lil-gui";
 
-/* ------------ レイアウト初期値（スクショの数値） ------------ */
+/* ------------ レイアウト初期値 ------------ */
 type Params = {
   aisleW: number;      // 通路幅
   curbW: number;       // 縁石幅
@@ -14,7 +14,7 @@ type Params = {
   signTilt: number;    // 看板傾き（度）
   ceilH: number;       // 天井高さ
   aisleLen: number;    // 通路長
-  camH: number;        // カメラ高さ
+  camH: number;        // カメラ高さ（固定）
 };
 const params: Params = {
   aisleW: 8.9,
@@ -46,13 +46,20 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   2000
 );
+// 高さ固定で入口寄りからスタート
 camera.position.set(0, params.camH, params.aisleLen * 0.48);
-camera.lookAt(0, params.camH * 0.6, 0);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.enablePan = false; // スマホ操作の誤パンを防ぐ
-// controls.enableZoom = false; // 必要ならズーム固定
+// 上下を完全に固定（水平のみ回転）
+controls.minPolarAngle = Math.PI / 2;
+controls.maxPolarAngle = Math.PI / 2;
+// 誤操作を減らす
+controls.enablePan = false;
+controls.enableZoom = false;
+
+// ターゲットも常に同じ高さにする（水平視線）
+controls.target.set(0, params.camH, 0);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -67,12 +74,11 @@ scene.add(mallRoot);
 
 const loader = new THREE.TextureLoader();
 const setSRGB = (t: THREE.Texture) => {
-  // r160+
   (t as any).colorSpace = (THREE as any).SRGBColorSpace ?? (THREE as any).sRGBEncoding;
   return t;
 };
 
-/* ------------ Click/Touch to Move（単一実装） ------------ */
+/* ------------ Click/Touch to Move（高さ固定版） ------------ */
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
@@ -82,11 +88,11 @@ const WALK = {
 };
 
 let walkTarget: THREE.Vector3 | null = null;
-const getCamY = () => camera.position.y;
 
 // 歩ける面を保持（buildMall() で差し替える）
 const floorMeshes: THREE.Object3D[] = [];
 
+// レイアウトから毎回クランプ値を計算（形状変更に追従）
 function getClampX() {
   const totalW = params.aisleW + 2 * (params.curbW + params.shopDepth);
   const margin = 1.0;
@@ -115,11 +121,11 @@ function trySetWalkTarget(ev: MouseEvent | TouchEvent) {
   const cx = getClampX(), cz = getClampZ();
   p.x = THREE.MathUtils.clamp(p.x, cx.min, cx.max);
   p.z = THREE.MathUtils.clamp(p.z, cz.min, cz.max);
-  p.y = getCamY();
+  p.y = params.camH; // 高さを固定
   walkTarget = p;
 }
 
-// イベント登録（重複禁止）
+// イベント登録
 renderer.domElement.addEventListener("click", (e) => trySetWalkTarget(e));
 renderer.domElement.addEventListener("touchend", (e) => { trySetWalkTarget(e); e.preventDefault(); }, { passive: false });
 
@@ -154,7 +160,7 @@ function makeSign(text: string) {
   );
 }
 
-/* ------------ モール構築（仕切りあり・モール風内装） ------------ */
+/* ------------ モール構築 ------------ */
 function buildMall() {
   clearGroup(mallRoot);
 
@@ -167,7 +173,7 @@ function buildMall() {
   // 床（全幅）
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(totalW, aisleLen),
-    new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 1 }) // 白内装に合わせて明るめ
+    new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 1 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
@@ -187,7 +193,7 @@ function buildMall() {
     mallRoot.add(s);
   });
 
-  // 縁石（薄いグレー）
+  // 縁石
   const curbMat = new THREE.MeshStandardMaterial({ color: 0xb8bec6, roughness: 1 });
   const curbGeo = new THREE.PlaneGeometry(curbW, aisleLen);
   const curbL = new THREE.Mesh(curbGeo, curbMat);
@@ -198,7 +204,7 @@ function buildMall() {
   curbR.position.x = halfW + curbW * 0.5;
   mallRoot.add(curbL, curbR);
 
-  // 通路沿いの低い壁（安全柵）
+  // 通路沿いの低い壁
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 1 });
   const wallGeo = new THREE.BoxGeometry(curbW, 1.0, aisleLen + 2);
   const wallL = new THREE.Mesh(wallGeo, wallMat);
@@ -265,18 +271,18 @@ function buildMall() {
 
   // ブース生成
   const startZ = -halfLen * 0.7;
-  const pitch = Math.max(shopGap, 6);
+  const pitch = Math.max(params.shopGap, 6);
 
   function makeBooth(name: string, side: "L" | "R", z: number, imgs: string[]) {
     const root = new THREE.Group();
 
     const deckX = side === "L"
-      ? -(halfW + curbW + shopDepth * 0.5)
-      : (halfW + curbW + shopDepth * 0.5);
+      ? -(halfW + params.curbW + params.shopDepth * 0.5)
+      : (halfW + params.curbW + params.shopDepth * 0.5);
 
-    // 店前フロア（色切替）
+    // 店前フロア
     const patch = new THREE.Mesh(
-      new THREE.PlaneGeometry(shopDepth + curbW * 1.4, shopWidthZ),
+      new THREE.PlaneGeometry(params.shopDepth + params.curbW * 1.4, params.shopWidthZ),
       new THREE.MeshStandardMaterial({ color: 0xeff2f5, roughness: 1 })
     );
     patch.rotation.x = -Math.PI / 2;
@@ -286,33 +292,33 @@ function buildMall() {
 
     // 店の床
     const deck = new THREE.Mesh(
-      new THREE.BoxGeometry(shopDepth, 0.15, shopWidthZ),
+      new THREE.BoxGeometry(params.shopDepth, 0.15, params.shopWidthZ),
       new THREE.MeshStandardMaterial({ color: 0xdadfe6, roughness: 1 })
     );
     deck.position.set(deckX, 0.075, z);
     deck.receiveShadow = true;
     root.add(deck);
 
-    // 背面壁（高め）
+    // 背面壁
     const back = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 3.0, shopWidthZ),
+      new THREE.BoxGeometry(0.2, 3.0, params.shopWidthZ),
       new THREE.MeshStandardMaterial({ color: 0x2a2f37, roughness: 1 })
     );
     back.position.set(
-      side === "L" ? deckX - (shopDepth * 0.5 - 0.1) : deckX + (shopDepth * 0.5 - 0.1),
+      side === "L" ? deckX - (params.shopDepth * 0.5 - 0.1) : deckX + (params.shopDepth * 0.5 - 0.1),
       1.5,
       z
     );
     back.castShadow = true; back.receiveShadow = true;
     root.add(back);
 
-    // U字の腰壁（パーテーション）
+    // U字の腰壁
     const lowH = 0.9;
     const parapet = new THREE.Mesh(
-      new THREE.BoxGeometry(0.15, lowH, shopWidthZ - 0.6),
+      new THREE.BoxGeometry(0.15, lowH, params.shopWidthZ - 0.6),
       new THREE.MeshStandardMaterial({ color: 0x343b44, roughness: 1 })
     );
-    const parX = side === "L" ? deckX + (shopDepth * 0.5 - 0.1) : deckX - (shopDepth * 0.5 - 0.1);
+    const parX = side === "L" ? deckX + (params.shopDepth * 0.5 - 0.1) : deckX - (params.shopDepth * 0.5 - 0.1);
     parapet.position.set(parX, lowH / 2, z);
     parapet.castShadow = true; parapet.receiveShadow = true;
 
@@ -321,8 +327,8 @@ function buildMall() {
     const cheek1 = new THREE.Mesh(cheekGeo, cheekMat);
     const cheek2 = new THREE.Mesh(cheekGeo, cheekMat);
     const cx = parX;
-    cheek1.position.set(cx, (lowH + 0.2) / 2, z - (shopWidthZ / 2 - 1.25));
-    cheek2.position.set(cx, (lowH + 0.2) / 2, z + (shopWidthZ / 2 - 1.25));
+    cheek1.position.set(cx, (lowH + 0.2) / 2, z - (params.shopWidthZ / 2 - 1.25));
+    cheek2.position.set(cx, (lowH + 0.2) / 2, z + (params.shopWidthZ / 2 - 1.25));
     cheek1.castShadow = cheek2.castShadow = true;
     root.add(parapet, cheek1, cheek2);
 
@@ -335,7 +341,7 @@ function buildMall() {
 
     // 展示パネル（通路向き）
     const panelW = 1.1, panelH = 1.1;
-    const px = side === "L" ? deckX + (shopDepth * 0.5 - 0.35) : deckX - (shopDepth * 0.5 - 0.35);
+    const px = side === "L" ? deckX + (params.shopDepth * 0.5 - 0.35) : deckX - (params.shopDepth * 0.5 - 0.35);
     const ry = side === "L" ? Math.PI / 2 : -Math.PI / 2;
     imgs.slice(0, 3).forEach((url, i) => {
       const t = setSRGB(loader.load(url));
@@ -363,47 +369,55 @@ function buildMall() {
   }
 
   // 左右に配置
-  for (let i = 0; i < booths.length; i++) {
+  const startZ = -halfLen * 0.7;
+  const pitch = Math.max(params.shopGap, 6);
+  for (let i = 0; i < 3; i++) {
     const z = startZ + i * pitch;
-    const b = booths[i % booths.length];
-    makeBooth(b.name, "L", z, b.images);
-  }
-  for (let i = 0; i < booths.length; i++) {
-    const z = startZ + i * pitch;
-    const b = booths[i % booths.length];
-    makeBooth(b.name, "R", z, b.images);
+    const b = ([
+      { name: "Fashion", images: [] },
+      { name: "Gadgets", images: [] },
+      { name: "Books",   images: [] },
+    ])[i % 3];
+    makeBooth(b.name, "L", z, [
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop",
+    ]);
+    makeBooth(b.name, "R", z, [
+      "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1527443154391-507e9dc6c5cc?q=80&w=800&auto=format&fit=crop",
+    ]);
   }
 }
 
 buildMall();
 
-/* ------------ 既存のUIボタン対応（あれば） ------------ */
+/* ------------ UIボタン（任意） ------------ */
 function jumpEntrance() {
   camera.position.set(0, params.camH, params.aisleLen * 0.48);
-  controls.target.set(0, params.camH * 0.6, 0);
+  controls.target.set(0, params.camH, 0);
   controls.update();
 }
 function jumpLeft() {
   camera.position.set(-(params.aisleW * 0.7), params.camH, 0);
-  controls.target.set(0, params.camH * 0.6, 0);
+  controls.target.set(0, params.camH, 0);
   controls.update();
 }
 function jumpRight() {
   camera.position.set(params.aisleW * 0.7, params.camH, 0);
-  controls.target.set(0, params.camH * 0.6, 0);
+  controls.target.set(0, params.camH, 0);
   controls.update();
 }
 (document.getElementById("goEntrance") as HTMLButtonElement | null)?.addEventListener("click", jumpEntrance);
 (document.getElementById("goBooks") as HTMLButtonElement | null)?.addEventListener("click", jumpLeft);
 (document.getElementById("reset") as HTMLButtonElement | null)?.addEventListener("click", () => {
   camera.position.set(0, params.camH, params.aisleLen * 0.2);
-  controls.target.set(0, params.camH * 0.5, 0);
+  controls.target.set(0, params.camH, 0);
   controls.update();
 });
-(document.getElementById("seeLeft") as HTMLButtonElement | null)?.addEventListener("click", jumpLeft);
-(document.getElementById("seeRight") as HTMLButtonElement | null)?.addEventListener("click", jumpRight);
 
-/* ------------ GUI（初期値は params） ------------ */
+/* ------------ GUI（camH変更時も高さ維持） ------------ */
 const gui = new GUI({ title: "Mall Layout" });
 gui.add(params, "aisleW", 5, 16, 0.1).name("通路幅").onFinishChange(buildMall);
 gui.add(params, "curbW", 0, 2, 0.1).name("縁石幅").onFinishChange(buildMall);
@@ -414,9 +428,9 @@ gui.add(params, "signH", 2, 6, 0.1).name("看板高さ").onFinishChange(buildMal
 gui.add(params, "signTilt", -20, 20, 1).name("看板傾き").onFinishChange(buildMall);
 gui.add(params, "ceilH", 6, 14, 0.1).name("天井高さ").onFinishChange(buildMall);
 gui.add(params, "aisleLen", 40, 120, 1).name("通路長").onFinishChange(() => { jumpEntrance(); buildMall(); });
-gui.add(params, "camH", 2, 8, 0.1).name("カメラ高さ").onChange(() => {
+gui.add(params, "camH", 2, 8, 0.1).name("カメラ高さ(固定)").onChange(() => {
   camera.position.y = params.camH;
-  controls.target.y = params.camH * 0.6;
+  controls.target.y = params.camH;
   controls.update();
 });
 
@@ -430,32 +444,33 @@ window.addEventListener("resize", () => {
 (function loop() {
   requestAnimationFrame(loop);
 
-  // Click/Touch 移動
+  // 高さ固定（どこかで変わってもここで矯正）
+  if (camera.position.y !== params.camH) camera.position.y = params.camH;
+  if (controls.target.y !== params.camH) controls.target.y = params.camH;
+
+  // クリック/タップ移動（水平のみ）
   if (walkTarget) {
     const delta = clock.getDelta();
 
-    const cur = camera.position.clone();
-    cur.y = getCamY();
-
+    const cur = new THREE.Vector3(camera.position.x, params.camH, camera.position.z);
     const to = new THREE.Vector3().subVectors(walkTarget, cur);
     const dist = to.length();
 
     if (dist < WALK.stopDist) {
-      camera.position.set(walkTarget.x, getCamY(), walkTarget.z);
+      camera.position.set(walkTarget.x, params.camH, walkTarget.z);
       walkTarget = null;
     } else {
       const step = Math.min(dist, WALK.speed * delta);
       const next = cur.add(to.normalize().multiplyScalar(step));
-
       const cx = getClampX(), cz = getClampZ();
       next.x = THREE.MathUtils.clamp(next.x, cx.min, cx.max);
       next.z = THREE.MathUtils.clamp(next.z, cz.min, cz.max);
-
-      camera.position.set(next.x, getCamY(), next.z);
+      camera.position.set(next.x, params.camH, next.z);
     }
 
+    // 注視点は常に同じ高さ・少し先へ
     const ahead = walkTarget ?? controls.target;
-    controls.target.lerp(new THREE.Vector3(ahead.x, getCamY() * 0.6, ahead.z), 0.08);
+    controls.target.lerp(new THREE.Vector3(ahead.x, params.camH, ahead.z), 0.12);
   }
 
   controls.update();
