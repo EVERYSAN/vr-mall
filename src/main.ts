@@ -3,9 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { BOOTHS, Booth, Item } from "./booths";
 
-// -----------------------------------------------------
-// 画面準備
-// -----------------------------------------------------
+/* ------------------------- small helpers ------------------------- */
 function ready(fn: () => void) {
   if (document.readyState === "complete" || document.readyState === "interactive") {
     setTimeout(fn, 0);
@@ -14,31 +12,52 @@ function ready(fn: () => void) {
   }
 }
 
+// Y だけカメラへ向ける（自然なビルボード）
+function lookAtCameraY(obj: THREE.Object3D, camera: THREE.Camera) {
+  const wp = obj.getWorldPosition(new THREE.Vector3());
+  const v = new THREE.Vector3(camera.position.x, wp.y, camera.position.z);
+  obj.lookAt(v);
+}
+
+// テクスチャ付き両面プレーン（ラベル）
+function makeBillboardLabel(text: string) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#9aa3af"; // 明るめグレー台座
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0b0f1a";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 120px system-ui, -apple-system, Segoe UI, Roboto, 'Yu Gothic', sans-serif";
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), mat);
+  (mesh as any).__billboard = true;
+  return mesh;
+}
+
+/* ----------------------------- main ------------------------------ */
 ready(() => {
-  console.log("boot main.ts");
-
-  // DOM
-  const app = document.getElementById("app");
-  if (!app) {
-    console.error("#app が見つかりません");
-    return;
-  }
-
-  // Renderer
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  /* ---------- renderer / scene / camera ---------- */
+  const app = document.getElementById("app")!;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  (renderer as any).outputColorSpace = (THREE as any).SRGBColorSpace;
   renderer.shadowMap.enabled = true;
+  (renderer as any).outputColorSpace = (THREE as any).SRGBColorSpace;
   app.appendChild(renderer.domElement);
-  console.log("canvas appended", renderer.domElement);
 
-  // Scene / Camera / Controls
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#0f1623");
 
-  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 3000);
-  const ENTRANCE_POS = new THREE.Vector3(0, 3.2, 45);
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+  const ENTRANCE_POS = new THREE.Vector3(0, 3.0, 26);
   const ENTRANCE_TGT = new THREE.Vector3(0, 1.6, 0);
   camera.position.copy(ENTRANCE_POS);
 
@@ -46,238 +65,172 @@ ready(() => {
   controls.enableDamping = true;
   controls.target.copy(ENTRANCE_TGT);
 
-  // -----------------------------------------------------
-  // 環境ライティング
-  // -----------------------------------------------------
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x223, 0.5);
-  scene.add(hemi);
-
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(15, 25, 10);
+  /* ---------- env: lights ---------- */
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x223, 0.7));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(12, 16, 8);
   dir.castShadow = true;
   dir.shadow.mapSize.set(2048, 2048);
+  dir.shadow.camera.near = 0.5;
+  dir.shadow.camera.far = 100;
   scene.add(dir);
 
-  // -----------------------------------------------------
-  // 床・通路・天井
-  // -----------------------------------------------------
-  const CORRIDOR_LEN = 200;   // 通路の長さ
-  const CORRIDOR_W = 22;      // 通路の幅
-  const STRIP_W = 4;          // 中央帯幅
+  /* ---------- env: floor, lanes, side-walls ---------- */
+  const hallWidth = 28;
+  const hallDepth = 90;
 
-  // 床（大きなフロア）
+  // main floor
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_W * 2.5, CORRIDOR_LEN * 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 1 })
+    new THREE.PlaneGeometry(hallWidth, hallDepth),
+    new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 1 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
+  floor.position.set(0, 0, 0);
   scene.add(floor);
 
-  // 通路中央の帯
-  const strip = new THREE.Mesh(
-    new THREE.PlaneGeometry(STRIP_W, CORRIDOR_LEN),
+  // central darker carpet
+  const carpet = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.5, hallDepth),
     new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 1 })
   );
-  strip.rotation.x = -Math.PI / 2;
-  strip.position.set(0, 0.002, 0);
-  strip.receiveShadow = true;
-  scene.add(strip);
+  carpet.rotation.x = -Math.PI / 2;
+  carpet.position.set(0, 0.002, 0);
+  carpet.receiveShadow = true;
+  scene.add(carpet);
 
-  // サイドの薄い帯（歩行帯イメージ）
-  const sideL = new THREE.Mesh(
-    new THREE.PlaneGeometry(STRIP_W, CORRIDOR_LEN),
-    new THREE.MeshStandardMaterial({ color: 0x7d8592, roughness: 1 })
-  );
-  sideL.rotation.x = -Math.PI / 2;
-  sideL.position.set(-STRIP_W - 3, 0.0015, 0);
-  sideL.receiveShadow = true;
-  scene.add(sideL);
+  // side lanes
+  const laneMat = new THREE.MeshStandardMaterial({ color: 0x70757a, roughness: 1 });
+  const laneW = 5.5;
+  const laneL = new THREE.Mesh(new THREE.PlaneGeometry(laneW, hallDepth), laneMat);
+  laneL.rotation.x = -Math.PI / 2;
+  laneL.position.set(-8.5, 0.001, 0);
+  laneL.receiveShadow = true;
+  scene.add(laneL);
 
-  const sideR = sideL.clone();
-  sideR.position.x = STRIP_W + 3;
-  scene.add(sideR);
+  const laneR = laneL.clone();
+  laneR.position.x = 8.5;
+  scene.add(laneR);
 
-  // 天井
-  const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(CORRIDOR_W * 2.5, CORRIDOR_LEN * 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x636a74, roughness: 0.9 })
-  );
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.y = 10;
-  ceiling.receiveShadow = false;
-  scene.add(ceiling);
+  // side walls (遠近の雰囲気)
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0b1220, roughness: 1, metalness: 0 });
+  const wallL = new THREE.Mesh(new THREE.PlaneGeometry(hallDepth, 6), wallMat);
+  wallL.rotation.y = Math.PI / 2;
+  wallL.rotation.z = Math.PI / 2;
+  wallL.position.set(-hallWidth / 2 - 0.01, 3, 0);
+  wallL.receiveShadow = true;
+  scene.add(wallL);
 
-  // 天井照明（ソフトなスポット）
-  for (let i = -80; i <= 80; i += 40) {
-    const light = new THREE.SpotLight(0xffffff, 0.65, 60, Math.PI / 5, 0.6, 1.5);
-    light.position.set(0, 10, i);
-    light.target.position.set(0, 0, i);
-    scene.add(light);
-    scene.add(light.target);
-  }
+  const wallR = wallL.clone();
+  wallR.position.x = hallWidth / 2 + 0.01;
+  wallR.rotation.y = -Math.PI / 2;
+  scene.add(wallR);
 
-  // ベンチ
-  function addBench(x: number, z: number) {
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5, 0.2, 0.7),
-      new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.8 })
+  // simple benches (オブジェクトに陰影)
+  function addBench(z: number) {
+    const w = 2.2, h = 0.35, d = 0.7;
+    const seat = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.7 })
     );
-    base.position.set(x, 0.1, z);
-    base.castShadow = true;
-    base.receiveShadow = true;
-    scene.add(base);
-
-    const legL = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 0.4, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x475569 })
-    );
-    legL.position.set(x - 1, 0.3, z);
-    const legR = legL.clone();
-    legR.position.x = x + 1;
-    scene.add(legL, legR);
+    seat.castShadow = true; seat.receiveShadow = true;
+    seat.position.set(0, h / 2, z);
+    scene.add(seat);
   }
-  for (let z = -60; z <= 60; z += 20) addBench(0, z);
+  [-24, -12, 0, 12, 24].forEach(addBench);
 
-  // -----------------------------------------------------
-  // 店舗ユーティリティ
-  // -----------------------------------------------------
-  // 看板スプライト（縦長の柱＋横読みテキスト）
-  function makePillarLabel(text: string, height: number) {
-    // 柱
-    const pillar = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, height, 1.2),
-      new THREE.MeshStandardMaterial({ color: 0x667080, roughness: 1 })
-    );
-    pillar.castShadow = true;
-    pillar.receiveShadow = true;
-
-    // 文字（縦に表示：スプライト）
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 512;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = "#667080";
-    ctx.fillRect(0, 0, 256, 512);
-    ctx.fillStyle = "#e5e7eb";
-    ctx.font = "bold 56px system-ui, sans-serif";
-    ctx.save();
-    ctx.translate(128, 256);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, 0, 0);
-    ctx.restore();
-    const tex = new THREE.CanvasTexture(canvas);
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
-    spr.scale.set(2.4, 4.8, 1);
-    spr.position.set(0, height * 0.55, 0); // 柱の少し上
-
-    const grp = new THREE.Group();
-    grp.add(pillar, spr);
-    return grp;
-  }
-
-  // 商品パネル（壁掛け）
-  const textureLoader = new THREE.TextureLoader();
-  function makeItemPanel(it: Item, leftSide: boolean) {
-    const t = textureLoader.load(it.image);
-    (t as any).colorSpace = (THREE as any).SRGBColorSpace;
-    const panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.2, 2.2),
-      new THREE.MeshBasicMaterial({ map: t, toneMapped: false })
-    );
-    // 通路中央に面を向ける（左右で内向き）
-    panel.rotation.y = leftSide ? -Math.PI / 2 : Math.PI / 2;
-    panel.userData = it;
-    panel.castShadow = true;
-    return panel;
-  }
-
-  // 一時保存
-  const clickable: THREE.Object3D[] = [];
+  /* ---------- shops ---------- */
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
+  const clickable: THREE.Object3D[] = [];
 
-  // 目標地点（本屋）
-  let booksTeleport = {
-    pos: ENTRANCE_POS.clone(),
-    tgt: ENTRANCE_TGT.clone(),
-  };
+  let booksTeleport = { pos: ENTRANCE_POS.clone(), tgt: ENTRANCE_TGT.clone() };
 
-  // 店舗生成：通路の左右（left/right）に等間隔で配置
-    const WALL_X = (CORRIDOR_W * 0.5) - 1.5;   // 通路中心から左右の壁(ファサード)までの距離
-    const FIRST_Z = -60;                       // 一番手前の店のZ
-    const STEP_Z  = 24;                        // 店の間隔
-    const PLATFORM_W = 8;                      // 店のプラットフォーム幅
-    const PLATFORM_D = 4.5;                    // 店の奥行
-    const FACADE_H   = 3.2;                    // 薄い壁(ファサード)高さ
-    const FACADE_W   = 7.5;                    // 薄い壁の横幅
-
-  function addShop(i: number, booth: Booth) {
-    const leftSide = booth.side === "left";
-    const x = leftSide ? -WALL_X : WALL_X;
-    const z = FIRST_Z + STEP_Z * i;
-  
+  function addShop({ side, z, name, items }: Booth) {
+    // サイドレーンのX位置
+    const x = side === "left" ? -8.5 : 8.5;
     const group = new THREE.Group();
-  
-    // ベース（床の台）
-    const base = new THREE.Mesh(
-      new THREE.BoxGeometry(PLATFORM_W, 0.25, PLATFORM_D),
-      new THREE.MeshStandardMaterial({ color: 0x808996, roughness: 1 })
+    group.position.set(x, 0, z);
+
+    // 壁台（ショーウィンドウ）
+    const platform = new THREE.Mesh(
+      new THREE.BoxGeometry(6.2, 0.25, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.6 })
     );
-    // 壁際に少し寄せる
-    base.position.set(x + (leftSide ? -1.2 : 1.2), 0.125, z);
-    base.receiveShadow = true;
-    group.add(base);
-  
-    // 薄い壁（ファサード）…通路側を向く
-    const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, FACADE_H, FACADE_W),
-      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.9 })
+    platform.position.set(0, 0.125, side === "left" ? 2.2 : -2.2);
+    platform.castShadow = true; platform.receiveShadow = true;
+    group.add(platform);
+
+    // 柱
+    const pillarHeight = 3.6;
+    const pillar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, pillarHeight, 0.6),
+      new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.8 })
     );
-    wall.position.set(x + (leftSide ? -0.15 : 0.15), FACADE_H * 0.5, z);
-    wall.castShadow = true;
-    wall.receiveShadow = true;
-    group.add(wall);
-  
-    // 看板（縦柱＋文字）…通路側を向ける
-    const pillarH = 4 + (i % 2) * 1.2;
-    const label = makePillarLabel(booth.name, pillarH);
-    label.rotation.y = leftSide ? Math.PI / 2 : -Math.PI / 2; // 中央（通路）向き
-    label.position.set(x + (leftSide ? -0.8 : 0.8), pillarH * 0.6, z);
-    group.add(label);
-  
-    // 商品パネル：壁の通路側に横並び（最大4枚）
-    const n = Math.min(booth.items.length, 4);
-    const gap = 1.6;                             // パネルの間隔
-    const start = -((n - 1) * gap) / 2;
-    for (let k = 0; k < n; k++) {
-      const it = booth.items[k];
-      const panel = makeItemPanel(it, leftSide); // 内向きに回す（通路中央側を向く）
-      panel.position.set(x + (leftSide ? -1.7 : 1.7), 1.6, z + (start + k * gap));
-      clickable.push(panel);
-      group.add(panel);
-    }
-  
-    // “本屋へ” テレポ点
-    if (booth.name.toLowerCase() === "books") {
-      const pos = new THREE.Vector3(leftSide ? -2.5 : 2.5, 2.6, z + (leftSide ? 8 : -8));
+    pillar.position.set(0, pillarHeight / 2, 0.0);
+    pillar.castShadow = true; pillar.receiveShadow = true;
+    group.add(pillar);
+
+    // 看板（両面）+ 枠 + 看板用ライト
+    const labelFront = makeBillboardLabel(name);
+    labelFront.position.set(0, pillarHeight * 0.95, side === "left" ? 0.3 : -0.3);
+    group.add(labelFront);
+
+    const labelBack = makeBillboardLabel(name);
+    labelBack.position.set(0, pillarHeight * 0.95, side === "left" ? -0.3 : 0.3);
+    group.add(labelBack);
+
+    const frame = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.8, 1.0),
+      new THREE.MeshStandardMaterial({ color: 0x111827, emissive: 0x0c111b, metalness: 0.2, roughness: 0.7 })
+    );
+    frame.position.copy(labelFront.position);
+    frame.position.z += side === "left" ? -0.01 : 0.01;
+    group.add(frame);
+
+    const signLight = new THREE.SpotLight(0xffffff, 0.35, 6, Math.PI / 5, 0.4);
+    signLight.position.set(0, pillarHeight, side === "left" ? 0.9 : -0.9);
+    signLight.target = frame;
+    group.add(signLight, signLight.target);
+
+    // 商品パネル（壁と平行）
+    const loader = new THREE.TextureLoader();
+    const spacing = 6.0 / (items.length + 1);
+    items.forEach((it, i) => {
+      const tex = loader.load(it.image);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const quad = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.8, 1.8),
+        new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })
+      );
+      // 壁面に平行（左=+90°, 右=-90°）
+      quad.rotation.set(0, side === "left" ? Math.PI / 2 : -Math.PI / 2, 0);
+      quad.position.set(
+        -3 + spacing * (i + 1),
+        1.55,
+        side === "left" ? 2.25 : -2.25
+      );
+      quad.userData = it;
+      quad.castShadow = true;
+      clickable.push(quad);
+      group.add(quad);
+    });
+
+    scene.add(group);
+
+    if (name === "Books") {
+      const pos = new THREE.Vector3(side === "left" ? -7.0 : 7.0, 2.8, z + (side === "left" ? 6.5 : -6.5));
       const tgt = new THREE.Vector3(x, 1.6, z);
       booksTeleport = { pos, tgt };
     }
-  
-    scene.add(group);
   }
 
-  // 並べる（左→右→左→右…のように BOOTHS 側で side を決めておけばOK）
-  BOOTHS.forEach((b, i) => addShop(i, b));
+  BOOTHS.forEach(addShop);
 
-  // -----------------------------------------------------
-  // 右サイド詳細パネル（既存のHTML要素を使用）
-  // -----------------------------------------------------
+  /* ---------- right side info panel ---------- */
   function openDetail({ title, price, desc, image, url }: Item) {
-    const wrap = document.getElementById("detail")!;
+    const wrap = document.getElementById("detail");
+    if (!wrap) return;
     (document.getElementById("dTitle") as HTMLHeadingElement).textContent = title || "Item";
     (document.getElementById("dImg") as HTMLImageElement).src = image || "";
     (document.getElementById("dPrice") as HTMLParagraphElement).textContent = price || "価格未設定";
@@ -285,15 +238,18 @@ ready(() => {
     (document.getElementById("dLink") as HTMLAnchorElement).href = url || "#";
     wrap.style.transform = "translateX(0%)";
   }
-  (document.getElementById("closeDetail") as HTMLButtonElement).onclick = () => {
+  (document.getElementById("closeDetail") as HTMLButtonElement)?.addEventListener("click", () => {
     (document.getElementById("detail") as HTMLElement).style.transform = "translateX(100%)";
-  };
+  });
 
-  // クリック（タップ）で商品ヒット
   function pick(ev: MouseEvent | TouchEvent) {
     const isTouch = (ev as TouchEvent).changedTouches?.length;
-    const px = isTouch ? (ev as TouchEvent).changedTouches[0].clientX : (ev as MouseEvent).clientX;
-    const py = isTouch ? (ev as TouchEvent).changedTouches[0].clientY : (ev as MouseEvent).clientY;
+    const px = isTouch
+      ? (ev as TouchEvent).changedTouches[0].clientX
+      : (ev as MouseEvent).clientX;
+    const py = isTouch
+      ? (ev as TouchEvent).changedTouches[0].clientY
+      : (ev as MouseEvent).clientY;
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((px - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((py - rect.top) / rect.height) * 2 + 1;
@@ -304,41 +260,28 @@ ready(() => {
   renderer.domElement.addEventListener("click", pick);
   renderer.domElement.addEventListener("touchend", (e) => { pick(e); e.preventDefault(); }, { passive: false });
 
-  // -----------------------------------------------------
-  // テレポート系ボタン
-  // -----------------------------------------------------
-  function jumpTo(pos: THREE.Vector3, tgt: THREE.Vector3) {
+  /* ---------- UI buttons ---------- */
+  function jump(pos: THREE.Vector3, tgt: THREE.Vector3) {
     camera.position.copy(pos);
     controls.target.copy(tgt);
     controls.update();
   }
-
-  (document.getElementById("goEntrance") as HTMLButtonElement)?.addEventListener("click", () => {
-    jumpTo(ENTRANCE_POS, ENTRANCE_TGT);
-  });
-  (document.getElementById("goBooks") as HTMLButtonElement)?.addEventListener("click", () => {
-    jumpTo(booksTeleport.pos, booksTeleport.tgt);
-  });
-  (document.getElementById("reset") as HTMLButtonElement)?.addEventListener("click", () => {
-    camera.position.set(0, 4, 18);
+  document.getElementById("goEntrance")?.addEventListener("click", () => jump(ENTRANCE_POS, ENTRANCE_TGT));
+  document.getElementById("goBooks")?.addEventListener("click", () => jump(booksTeleport.pos, booksTeleport.tgt));
+  document.getElementById("reset")?.addEventListener("click", () => {
+    camera.position.set(0, 3.2, 12);
     controls.target.set(0, 1.6, 0);
     controls.update();
   });
-
-  // 左右を見る（少しだけ横に移動）
-  (document.getElementById("viewLeft") as HTMLButtonElement)?.addEventListener("click", () => {
-    const offset = new THREE.Vector3(-6, 0, 0);
-    jumpTo(camera.position.clone().add(offset), controls.target.clone().add(offset));
+  document.getElementById("viewLeft")?.addEventListener("click", () => {
+    jump(new THREE.Vector3(-7.0, 2.8, 6), new THREE.Vector3(-7.0, 1.6, 0));
   });
-  (document.getElementById("viewRight") as HTMLButtonElement)?.addEventListener("click", () => {
-    const offset = new THREE.Vector3(6, 0, 0);
-    jumpTo(camera.position.clone().add(offset), controls.target.clone().add(offset));
+  document.getElementById("viewRight")?.addEventListener("click", () => {
+    jump(new THREE.Vector3(7.0, 2.8, 6), new THREE.Vector3(7.0, 1.6, 0));
   });
 
-  // -----------------------------------------------------
-  // 「AIに聞く」ボタン（Vercel API）
-  // -----------------------------------------------------
-  (document.getElementById("askAI") as HTMLButtonElement)?.addEventListener("click", async () => {
+  // AI に聞く（CORS 設定済みの Vercel 側 /api/concierge を想定）
+  document.getElementById("askAI")?.addEventListener("click", async () => {
     const q = window.prompt("何をお探しですか？（例：初心者向けのプログラミング本）");
     if (!q) return;
     const btn = document.getElementById("askAI") as HTMLButtonElement;
@@ -349,18 +292,16 @@ ready(() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: q, context: { where: "corridor" } }),
       });
-      const data = await r.json().catch(() => null);
+      const data = await r.json();
       alert(data?.reply ?? "（回答を取得できませんでした）");
-    } catch (e) {
-      alert("通信エラー: " + (e as Error).message);
+    } catch (e: any) {
+      alert("通信エラー: " + (e?.message || e));
     } finally {
       btn.disabled = false; btn.textContent = "AIに聞く";
     }
   });
 
-  // -----------------------------------------------------
-  // ループ & リサイズ
-  // -----------------------------------------------------
+  /* ---------- resize / loop ---------- */
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -369,6 +310,12 @@ ready(() => {
 
   (function animate() {
     requestAnimationFrame(animate);
+
+    // ビルボード（ラベル）はYだけカメラへ向ける
+    scene.traverse((obj) => {
+      if ((obj as any).__billboard) lookAtCameraY(obj, camera);
+    });
+
     controls.update();
     renderer.render(scene, camera);
   })();
