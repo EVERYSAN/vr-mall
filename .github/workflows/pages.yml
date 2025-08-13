@@ -4,12 +4,15 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
+# GitHub Pages 用の推奨 permission 設定
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# 同時実行を抑止（連続 push での競合防止）
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -21,62 +24,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 18
+          cache: npm
 
       - name: Install dependencies
-        run: npm ci
-
-      # ← 追加：絶対パス修正＆ログ出力
-      - name: Sanity check & fix index paths
         run: |
-          echo "== grep BEFORE =="
-          grep -Rn "/vr-mall/src/" . || true
+          npm install
+          # GUI をビルド時に含める（未インストール時でも確実に入るよう追加入れ）
+          npm install lil-gui --save
 
-          echo "== BEFORE (index.html) =="
-          sed -n '1,120p' index.html || true
-
-          if [ -f public/index.html ]; then
-            echo "== BEFORE (public/index.html) =="
-            sed -n '1,120p' public/index.html
-          fi
-
-          # 絶対パスを相対に強制変換
-          if grep -q "/vr-mall/src/" index.html 2>/dev/null; then
-            sed -i 's|/vr-mall/src/|./src/|g' index.html
-          fi
-          if [ -f public/index.html ] && grep -q "/vr-mall/src/" public/index.html; then
-            sed -i 's|/vr-mall/src/|./src/|g' public/index.html
-          fi
-
-          echo "== grep AFTER =="
-          grep -Rn "/vr-mall/src/" . || true
-
-          echo "== AFTER (index.html) =="
-          sed -n '1,120p' index.html || true
-          if [ -f public/index.html ]; then
-            echo "== AFTER (public/index.html) =="
-            sed -n '1,120p' public/index.html
-          fi
-
+      # もし Vite の base が未設定なら vite.config.ts に base を設定してください
+      # 例) base: '/vr-mall/' （リポジトリ名が vr-mall の場合）
       - name: Build
         run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: ./dist
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy
         uses: actions/deploy-pages@v4
