@@ -57,7 +57,6 @@ controls.maxPolarAngle = Math.PI / 2;
 // 誤操作を減らす
 controls.enablePan = false;
 controls.enableZoom = false;
-
 // ターゲットも常に同じ高さにする（水平視線）
 controls.target.set(0, params.camH, 0);
 
@@ -125,7 +124,7 @@ function trySetWalkTarget(ev: MouseEvent | TouchEvent) {
   walkTarget = p;
 }
 
-// イベント登録
+// イベント登録（重複禁止）
 renderer.domElement.addEventListener("click", (e) => trySetWalkTarget(e));
 renderer.domElement.addEventListener("touchend", (e) => { trySetWalkTarget(e); e.preventDefault(); }, { passive: false });
 
@@ -160,7 +159,35 @@ function makeSign(text: string) {
   );
 }
 
-/* ------------ モール構築 ------------ */
+/* ------------ デモ店舗データ（共有） ------------ */
+const demoBooths: { name: string; images: string[] }[] = [
+  {
+    name: "Fashion",
+    images: [
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop",
+    ],
+  },
+  {
+    name: "Gadgets",
+    images: [
+      "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1527443154391-507e9dc6c5cc?q=80&w=800&auto=format&fit=crop",
+    ],
+  },
+  {
+    name: "Books",
+    images: [
+      "https://images.unsplash.com/photo-1457694587812-e8bf29a43845?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1526318472351-c75fcf070305?q=80&w=800&auto=format&fit=crop",
+    ],
+  },
+];
+
+/* ------------ モール構築（仕切りあり・モール風内装） ------------ */
 function buildMall() {
   clearGroup(mallRoot);
 
@@ -241,38 +268,7 @@ function buildMall() {
     mallRoot.add(rect);
   }
 
-  // デモ店舗データ
-  const booths: { name: string; images: string[] }[] = [
-    {
-      name: "Fashion",
-      images: [
-        "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop",
-      ],
-    },
-    {
-      name: "Gadgets",
-      images: [
-        "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1527443154391-507e9dc6c5cc?q=80&w=800&auto=format&fit=crop",
-      ],
-    },
-    {
-      name: "Books",
-      images: [
-        "https://images.unsplash.com/photo-1457694587812-e8bf29a43845?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
-        "https://images.unsplash.com/photo-1526318472351-c75fcf070305?q=80&w=800&auto=format&fit=crop",
-      ],
-    },
-  ];
-
-  // ブース生成
-  const startZ = -halfLen * 0.7;
-  const pitch = Math.max(params.shopGap, 6);
-
+  // ブース生成ヘルパ
   function makeBooth(name: string, side: "L" | "R", z: number, imgs: string[]) {
     const root = new THREE.Group();
 
@@ -368,26 +364,19 @@ function buildMall() {
     mallRoot.add(root);
   }
 
-  // 左右に配置
-  const startZ = -halfLen * 0.7;
-  const pitch = Math.max(params.shopGap, 6);
-  for (let i = 0; i < 3; i++) {
-    const z = startZ + i * pitch;
-    const b = ([
-      { name: "Fashion", images: [] },
-      { name: "Gadgets", images: [] },
-      { name: "Books",   images: [] },
-    ])[i % 3];
-    makeBooth(b.name, "L", z, [
-      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=800&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1491553895911-0055eca6402d?q=80&w=800&auto=format&fit=crop",
-    ]);
-    makeBooth(b.name, "R", z, [
-      "https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=800&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=800&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1527443154391-507e9dc6c5cc?q=80&w=800&auto=format&fit=crop",
-    ]);
+  // 左右に配置（★ startZ / pitch はここで一度だけ定義 ★）
+  const startZLocal = -halfLen * 0.7;
+  const pitchLocal = Math.max(params.shopGap, 6);
+
+  for (let i = 0; i < demoBooths.length; i++) {
+    const z = startZLocal + i * pitchLocal;
+    const b = demoBooths[i % demoBooths.length];
+    makeBooth(b.name, "L", z, b.images);
+  }
+  for (let i = 0; i < demoBooths.length; i++) {
+    const z = startZLocal + i * pitchLocal;
+    const b = demoBooths[i % demoBooths.length];
+    makeBooth(b.name, "R", z, b.images);
   }
 }
 
