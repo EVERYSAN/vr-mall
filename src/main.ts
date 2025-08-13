@@ -96,7 +96,7 @@ ready(() => {
   const sideWallL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, FLOOR_LEN), wallMat);
   const sideWallR = sideWallL.clone();
   sideWallL.position.set(-FLOOR_W / 2, 3, 0);
-  sideWallR.position.set( F      LOOR_W / 2, 3, 0);
+  sideWallR.position.set( FLOOR_W / 2, 3, 0);
   sideWallL.castShadow = sideWallR.castShadow = true;
   sideWallL.receiveShadow = sideWallR.receiveShadow = true;
   scene.add(sideWallL, sideWallR);
