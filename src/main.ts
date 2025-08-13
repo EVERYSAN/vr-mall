@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import GUI from "lil-gui";
 
-/* ------------ レイアウト初期 ------------ */
+/* ------------ レイアウト初期値 ------------ */
 type Params = {
   aisleW: number;      // 通路幅
   curbW: number;       // 縁石幅
@@ -46,18 +46,16 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   2000
 );
-// 高さ固定で入口寄りからスタート
 camera.position.set(0, params.camH, params.aisleLen * 0.48);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-// 上下を完全に固定（水平のみ回転）
+// 水平のみ回転（上下固定）
 controls.minPolarAngle = Math.PI / 2;
 controls.maxPolarAngle = Math.PI / 2;
-// 誤操作を減らす
+// 誤操作防止
 controls.enablePan = false;
 controls.enableZoom = false;
-// ターゲットも常に同じ高さにする（水平視線）
 controls.target.set(0, params.camH, 0);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
@@ -77,21 +75,25 @@ const setSRGB = (t: THREE.Texture) => {
   return t;
 };
 
-/* ------------ Click/Touch to Move（高さ固定版） ------------ */
+/* ------------ Raycast：移動＆インタラクト ------------ */
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
-const WALK = {
-  speed: 6,       // m/s相当
-  stopDist: 0.15, // 停止距離
-};
-
+const WALK = { speed: 6, stopDist: 0.15 };
 let walkTarget: THREE.Vector3 | null = null;
 
-// 歩ける面を保持（buildMall() で差し替える）
-const floorMeshes: THREE.Object3D[] = [];
+// クリック対象グループ
+const floorMeshes: THREE.Object3D[] = [];        // 歩ける床
+const interactiveMeshes: THREE.Object3D[] = [];  // 看板など
 
-// レイアウトから毎回クランプ値を計算（形状変更に追従）
+function setPointerNdc(ev: MouseEvent | TouchEvent) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ev instanceof TouchEvent ? ev.changedTouches[0].clientX : (ev as MouseEvent).clientX;
+  const y = ev instanceof TouchEvent ? ev.changedTouches[0].clientY : (ev as MouseEvent).clientY;
+  pointerNdc.x = ((x - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((y - rect.top) / rect.height) * 2 + 1;
+}
+
 function getClampX() {
   const totalW = params.aisleW + 2 * (params.curbW + params.shopDepth);
   const margin = 1.0;
@@ -102,31 +104,56 @@ function getClampZ() {
   return { min: -params.aisleLen * 0.5 + margin, max: params.aisleLen * 0.5 - margin };
 }
 
-function setPointerNdc(ev: MouseEvent | TouchEvent) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  const x = ev instanceof TouchEvent ? ev.changedTouches[0].clientX : (ev as MouseEvent).clientX;
-  const y = ev instanceof TouchEvent ? ev.changedTouches[0].clientY : (ev as MouseEvent).clientY;
-  pointerNdc.x = ((x - rect.left) / rect.width) * 2 - 1;
-  pointerNdc.y = -((y - rect.top) / rect.height) * 2 + 1;
+/* ------------ AI問い合わせ（Vercel Functions） ------------ */
+const API_URL = "https://vr-mall-api.vercel.app/api/concierge";
+
+async function askConcierge(message: string, context: Record<string, any>) {
+  try {
+    const r = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, context })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.error || "API error");
+    alert(data?.reply ?? "（回答を取得できませんでした）");
+  } catch (e: any) {
+    alert("通信エラー: " + (e?.message || e));
+  }
 }
 
-function trySetWalkTarget(ev: MouseEvent | TouchEvent) {
+/* ------------ クリック/タップ：優先度=インタラクト > 移動 ------------ */
+function onPick(ev: MouseEvent | TouchEvent) {
   setPointerNdc(ev);
   raycaster.setFromCamera(pointerNdc, camera);
-  const hits = raycaster.intersectObjects(floorMeshes, false);
-  if (!hits.length) return;
 
-  const p = hits[0].point.clone();
+  // 1) 先にインタラクト対象（看板など）を判定
+  const hitUI = raycaster.intersectObjects(interactiveMeshes, true);
+  if (hitUI.length) {
+    const obj = hitUI[0].object as any;
+    const info = obj.userData || {};
+    // 看板：AIに質問（店コンテキスト付き）
+    if (info.type === "sign" && info.store) {
+      const q = window.prompt(`「${info.store}」でお探しのものは？（例：初心者向けのデザイン本）`);
+      if (q) askConcierge(q, { where: "store", store: info.store });
+    }
+    return; // インタラクトがあれば移動はしない
+  }
+
+  // 2) インタラクトが無ければ床に対して移動
+  const hitFloor = raycaster.intersectObjects(floorMeshes, false);
+  if (!hitFloor.length) return;
+
+  const p = hitFloor[0].point.clone();
   const cx = getClampX(), cz = getClampZ();
   p.x = THREE.MathUtils.clamp(p.x, cx.min, cx.max);
   p.z = THREE.MathUtils.clamp(p.z, cz.min, cz.max);
-  p.y = params.camH; // 高さを固定
+  p.y = params.camH; // 高さ固定
   walkTarget = p;
 }
 
-// イベント登録（重複禁止）
-renderer.domElement.addEventListener("click", (e) => trySetWalkTarget(e));
-renderer.domElement.addEventListener("touchend", (e) => { trySetWalkTarget(e); e.preventDefault(); }, { passive: false });
+renderer.domElement.addEventListener("click", onPick);
+renderer.domElement.addEventListener("touchend", (e) => { onPick(e); e.preventDefault(); }, { passive: false });
 
 /* ------------ ユーティリティ ------------ */
 function clearGroup(g: THREE.Group) {
@@ -141,6 +168,7 @@ function clearGroup(g: THREE.Group) {
     });
   }
 }
+
 function makeSign(text: string) {
   const W = 1024, H = 280;
   const cvs = document.createElement("canvas");
@@ -159,7 +187,7 @@ function makeSign(text: string) {
   );
 }
 
-/* ------------ デモ店舗データ（共有） ------------ */
+/* ------------ デモ店舗データ ------------ */
 const demoBooths: { name: string; images: string[] }[] = [
   {
     name: "Fashion",
@@ -187,14 +215,15 @@ const demoBooths: { name: string; images: string[] }[] = [
   },
 ];
 
-/* ------------ モール構築（仕切りあり・モール風内装） ------------ */
+/* ------------ モール構築（仕切りあり・看板に userData 付与） ------------ */
 function buildMall() {
   clearGroup(mallRoot);
+  floorMeshes.length = 0;
+  interactiveMeshes.length = 0;
 
   const { aisleW, curbW, shopDepth, shopWidthZ, shopGap, signH, signTilt, ceilH, aisleLen } = params;
   const halfW = aisleW * 0.5;
   const halfLen = aisleLen * 0.5;
-
   const totalW = aisleW + 2 * (curbW + shopDepth);
 
   // 床（全幅）
@@ -205,9 +234,6 @@ function buildMall() {
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   mallRoot.add(floor);
-
-  // クリック当たり面の登録を更新
-  floorMeshes.length = 0;
   floorMeshes.push(floor);
 
   // 通路の帯（3本）
@@ -268,7 +294,7 @@ function buildMall() {
     mallRoot.add(rect);
   }
 
-  // ブース生成ヘルパ
+  // ブース生成ヘルパ（看板に userData を付与）
   function makeBooth(name: string, side: "L" | "R", z: number, imgs: string[]) {
     const root = new THREE.Group();
 
@@ -328,11 +354,13 @@ function buildMall() {
     cheek1.castShadow = cheek2.castShadow = true;
     root.add(parapet, cheek1, cheek2);
 
-    // 看板（通路向き）
+    // 看板（通路向き）→ インタラクト対象に登録
     const sign = makeSign(name);
     sign.position.set(parX + (side === "L" ? 0.01 : -0.01), params.signH, z);
     sign.rotation.y = side === "L" ? Math.PI / 2 : -Math.PI / 2;
     if (params.signTilt !== 0) sign.rotation.x = THREE.MathUtils.degToRad(params.signTilt);
+    (sign as any).userData = { type: "sign", store: name };
+    interactiveMeshes.push(sign);
     root.add(sign);
 
     // 展示パネル（通路向き）
@@ -364,10 +392,9 @@ function buildMall() {
     mallRoot.add(root);
   }
 
-  // 左右に配置（★ startZ / pitch はここで一度だけ定義 ★）
+  // 左右に配置
   const startZLocal = -halfLen * 0.7;
   const pitchLocal = Math.max(params.shopGap, 6);
-
   for (let i = 0; i < demoBooths.length; i++) {
     const z = startZLocal + i * pitchLocal;
     const b = demoBooths[i % demoBooths.length];
@@ -382,31 +409,26 @@ function buildMall() {
 
 buildMall();
 
-/* ------------ UIボタン（任意） ------------ */
+/* ------------ UIボタン（任意・存在すれば動く） ------------ */
 function jumpEntrance() {
   camera.position.set(0, params.camH, params.aisleLen * 0.48);
   controls.target.set(0, params.camH, 0);
   controls.update();
 }
-function jumpLeft() {
-  camera.position.set(-(params.aisleW * 0.7), params.camH, 0);
-  controls.target.set(0, params.camH, 0);
-  controls.update();
-}
-function jumpRight() {
-  camera.position.set(params.aisleW * 0.7, params.camH, 0);
-  controls.target.set(0, params.camH, 0);
-  controls.update();
-}
 (document.getElementById("goEntrance") as HTMLButtonElement | null)?.addEventListener("click", jumpEntrance);
-(document.getElementById("goBooks") as HTMLButtonElement | null)?.addEventListener("click", jumpLeft);
 (document.getElementById("reset") as HTMLButtonElement | null)?.addEventListener("click", () => {
   camera.position.set(0, params.camH, params.aisleLen * 0.2);
   controls.target.set(0, params.camH, 0);
   controls.update();
 });
 
-/* ------------ GUI（camH変更時も高さ維持） ------------ */
+// 任意の「AIに聞く」ボタンがあれば（入口文脈で質問）
+(document.getElementById("askAI") as HTMLButtonElement | null)?.addEventListener("click", async () => {
+  const q = window.prompt("何をお探しですか？（例：初心者向けのプログラミング本）");
+  if (q) askConcierge(q, { where: "entrance" });
+});
+
+/* ------------ GUI ------------ */
 const gui = new GUI({ title: "Mall Layout" });
 gui.add(params, "aisleW", 5, 16, 0.1).name("通路幅").onFinishChange(buildMall);
 gui.add(params, "curbW", 0, 2, 0.1).name("縁石幅").onFinishChange(buildMall);
@@ -433,14 +455,13 @@ window.addEventListener("resize", () => {
 (function loop() {
   requestAnimationFrame(loop);
 
-  // 高さ固定（どこかで変わってもここで矯正）
+  // 高さ固定（矯正）
   if (camera.position.y !== params.camH) camera.position.y = params.camH;
   if (controls.target.y !== params.camH) controls.target.y = params.camH;
 
-  // クリック/タップ移動（水平のみ）
+  // クリック/タップ移動
   if (walkTarget) {
     const delta = clock.getDelta();
-
     const cur = new THREE.Vector3(camera.position.x, params.camH, camera.position.z);
     const to = new THREE.Vector3().subVectors(walkTarget, cur);
     const dist = to.length();
@@ -457,7 +478,6 @@ window.addEventListener("resize", () => {
       camera.position.set(next.x, params.camH, next.z);
     }
 
-    // 注視点は常に同じ高さ・少し先へ
     const ahead = walkTarget ?? controls.target;
     controls.target.lerp(new THREE.Vector3(ahead.x, params.camH, ahead.z), 0.12);
   }
