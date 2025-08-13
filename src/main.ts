@@ -38,7 +38,7 @@ renderer.shadowMap.enabled = true;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0f1623);
+scene.background = new THREE.Color(0xffffff);
 
 const camera = new THREE.PerspectiveCamera(
   60,
@@ -363,6 +363,38 @@ gui.add(params, "camH", 2, 8, 0.1).name("カメラ高さ").onChange(() => {
   camera.position.y = params.camH;
   controls.target.y = params.camH * 0.6;
   controls.update();
+});
+// Raycasterとマウス座標を用意
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+window.addEventListener("click", (event) => {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(scene.children, true);
+
+    if (intersects.length > 0) {
+        const targetPos = intersects[0].point;
+
+        // カメラ位置をスムーズに移動
+        gsap.to(camera.position, {
+            duration: 1,
+            x: targetPos.x + 5,
+            y: targetPos.y + 5,
+            z: targetPos.z + 5,
+            onUpdate: () => controls.update()
+        });
+
+        // コントロールの注視点も移動
+        gsap.to(controls.target, {
+            duration: 1,
+            x: targetPos.x,
+            y: targetPos.y,
+            z: targetPos.z
+        });
+    }
 });
 
 /* ------------ ループ/リサイズ ------------ */
