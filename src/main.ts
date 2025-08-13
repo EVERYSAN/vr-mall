@@ -206,51 +206,67 @@ ready(() => {
   };
 
   // 店舗生成：通路の左右（left/right）に等間隔で配置
-  const LANE_X = 10.5;          // 店の奥行方向の位置（左右）
-  const FIRST_Z = -60;          // 最初の店のZ
-  const STEP_Z = 24;            // 店と店の間隔
-  const BASE_PAD = { w: 8, d: 4 };
+    const WALL_X = (CORRIDOR_W * 0.5) - 1.5;   // 通路中心から左右の壁(ファサード)までの距離
+    const FIRST_Z = -60;                       // 一番手前の店のZ
+    const STEP_Z  = 24;                        // 店の間隔
+    const PLATFORM_W = 8;                      // 店のプラットフォーム幅
+    const PLATFORM_D = 4.5;                    // 店の奥行
+    const FACADE_H   = 3.2;                    // 薄い壁(ファサード)高さ
+    const FACADE_W   = 7.5;                    // 薄い壁の横幅
 
   function addShop(i: number, booth: Booth) {
     const leftSide = booth.side === "left";
-    const x = leftSide ? -LANE_X : LANE_X;
+    const x = leftSide ? -WALL_X : WALL_X;
     const z = FIRST_Z + STEP_Z * i;
-
+  
     const group = new THREE.Group();
-
-    // 店舗の床ベース
+  
+    // ベース（床の台）
     const base = new THREE.Mesh(
-      new THREE.BoxGeometry(BASE_PAD.w, 0.25, BASE_PAD.d),
+      new THREE.BoxGeometry(PLATFORM_W, 0.25, PLATFORM_D),
       new THREE.MeshStandardMaterial({ color: 0x808996, roughness: 1 })
     );
-    base.position.set(x, 0.125, z);
+    // 壁際に少し寄せる
+    base.position.set(x + (leftSide ? -1.2 : 1.2), 0.125, z);
     base.receiveShadow = true;
     group.add(base);
-
-    // 看板の柱（高さは少し差をつけるとモールっぽい）
-    const pillarH = 4 + (i % 2) * 2;
+  
+    // 薄い壁（ファサード）…通路側を向く
+    const wall = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, FACADE_H, FACADE_W),
+      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.9 })
+    );
+    wall.position.set(x + (leftSide ? -0.15 : 0.15), FACADE_H * 0.5, z);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+  
+    // 看板（縦柱＋文字）…通路側を向ける
+    const pillarH = 4 + (i % 2) * 1.2;
     const label = makePillarLabel(booth.name, pillarH);
-    label.position.set(x + (leftSide ? 1.6 : -1.6), pillarH / 2, z);
+    label.rotation.y = leftSide ? Math.PI / 2 : -Math.PI / 2; // 中央（通路）向き
+    label.position.set(x + (leftSide ? -0.8 : 0.8), pillarH * 0.6, z);
     group.add(label);
-
-    // 商品パネル（柱の通路側に 3つ）
-    const spacing = BASE_PAD.w / (booth.items.length + 1);
-    booth.items.forEach((it, idx) => {
-      const px = x + (leftSide ? 2.2 : -2.2); // 柱の外側
-      const pz = z - BASE_PAD.d / 2 + spacing * (idx + 1);
-      const panel = makeItemPanel(it, leftSide);
-      panel.position.set(px, 1.5, pz);
+  
+    // 商品パネル：壁の通路側に横並び（最大4枚）
+    const n = Math.min(booth.items.length, 4);
+    const gap = 1.6;                             // パネルの間隔
+    const start = -((n - 1) * gap) / 2;
+    for (let k = 0; k < n; k++) {
+      const it = booth.items[k];
+      const panel = makeItemPanel(it, leftSide); // 内向きに回す（通路中央側を向く）
+      panel.position.set(x + (leftSide ? -1.7 : 1.7), 1.6, z + (start + k * gap));
       clickable.push(panel);
       group.add(panel);
-    });
-
-    // Books の目の前テレポ座標
+    }
+  
+    // “本屋へ” テレポ点
     if (booth.name.toLowerCase() === "books") {
-      const pos = new THREE.Vector3(leftSide ? -2 : 2, 2.6, z + (leftSide ? 7 : -7));
+      const pos = new THREE.Vector3(leftSide ? -2.5 : 2.5, 2.6, z + (leftSide ? 8 : -8));
       const tgt = new THREE.Vector3(x, 1.6, z);
       booksTeleport = { pos, tgt };
     }
-
+  
     scene.add(group);
   }
 
