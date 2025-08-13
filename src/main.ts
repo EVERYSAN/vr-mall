@@ -38,7 +38,9 @@ renderer.shadowMap.enabled = true;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
+scene.background = new THREE.Color(0xffffff); // ← 白背景
+const clock = new THREE.Clock();              // ← delta 用
+
 
 
 const camera = new THREE.PerspectiveCamera(
@@ -50,6 +52,34 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(0, params.camH, params.aisleLen * 0.48);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+// === Click/Touch to Move: 設定 ===
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+
+const WALK = {
+  speed: 6,       // m/s 相当
+  stopDist: 0.15, // 目標への停止距離
+};
+
+// “通路幅/長さ”から毎フレーム計算する（レイアウト変更に追従）
+function getClampX() {
+  // 合計幅 = 通路幅 + 両側(縁石 + 店の奥行)
+  const totalW = params.aisleW + 2 * (params.curbW + params.shopDepth);
+  // 通路外の店に乗り上げないよう、両端を少しだけ内側に
+  const margin = 1.0;
+  return { min: -totalW * 0.5 + margin, max: totalW * 0.5 - margin };
+}
+function getClampZ() {
+  const margin = 1.0;
+  return { min: -params.aisleLen * 0.5 + margin, max: params.aisleLen * 0.5 - margin };
+}
+
+let walkTarget: THREE.Vector3 | null = null;
+const getCamY = () => camera.position.y;
+
+// クリック先にする「歩ける面」をここに入れる
+const floorMeshes: THREE.Object3D[] = [];
+
 controls.enableDamping = true;
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
@@ -115,6 +145,10 @@ function buildMall() {
     new THREE.PlaneGeometry(totalW, aisleLen),
     new THREE.MeshStandardMaterial({ color: 0x8f949b, roughness: 1 })
   );
+  // ... 床を作った直後
+  floorMeshes.length = 0;      // 古い参照をクリア
+  floorMeshes.push(floor);     // いまの床をクリック対象に
+
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   mallRoot.add(floor);
@@ -451,6 +485,36 @@ renderer.domElement.addEventListener("touchend", (e) => { trySetWalkTarget(e); e
 // 見回しは OrbitControls に任せる：ズーム/パンは好みで無効化
 controls.enablePan = false;     // 片指ドラッグ＝見回し、誤操作を減らすなら true→false 推奨
 // controls.enableZoom = false; // ズームを固定したいならコメントを外す
+function setPointerNdc(ev: MouseEvent | TouchEvent) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ev instanceof TouchEvent ? ev.changedTouches[0].clientX : (ev as MouseEvent).clientX;
+  const y = ev instanceof TouchEvent ? ev.changedTouches[0].clientY : (ev as MouseEvent).clientY;
+  pointerNdc.x = ( (x - rect.left) / rect.width ) * 2 - 1;
+  pointerNdc.y = -( (y - rect.top) / rect.height ) * 2 + 1;
+}
+
+function trySetWalkTarget(ev: MouseEvent | TouchEvent) {
+  setPointerNdc(ev);
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(floorMeshes, false);
+  if (!hits.length) return;
+
+  const p = hits[0].point.clone();
+  const cx = getClampX(), cz = getClampZ();
+  p.x = THREE.MathUtils.clamp(p.x, cx.min, cx.max);
+  p.z = THREE.MathUtils.clamp(p.z, cz.min, cz.max);
+  p.y = getCamY();      // 高さは維持
+  walkTarget = p;
+}
+
+// PC: クリック / スマホ: タップ
+renderer.domElement.addEventListener("click", (e) => trySetWalkTarget(e));
+renderer.domElement.addEventListener("touchend", (e) => { trySetWalkTarget(e); e.preventDefault(); }, { passive: false });
+
+//（好みで）ズーム/パンを制御
+controls.enablePan = false;
+// controls.enableZoom = false;
+
 
 /* ------------ ループ/リサイズ ------------ */
 window.addEventListener("resize", () => {
@@ -492,6 +556,34 @@ if (walkTarget) {
   // 見回し中心は少し先を見ると自然
   const lookAhead = walkTarget ? walkTarget : controls.target;
   controls.target.lerp(new THREE.Vector3(lookAhead.x, getCamY() * 0.6, lookAhead.z), 0.08);
+}
+// === Click/Touch to Move: 毎フレーム処理 ===
+if (walkTarget) {
+  const delta = clock.getDelta();
+
+  const cur = camera.position.clone();
+  cur.y = getCamY();
+
+  const to = new THREE.Vector3().subVectors(walkTarget, cur);
+  const dist = to.length();
+
+  if (dist < WALK.stopDist) {
+    camera.position.set(walkTarget.x, getCamY(), walkTarget.z);
+    walkTarget = null;
+  } else {
+    const step = Math.min(dist, WALK.speed * delta);
+    const next = cur.add(to.normalize().multiplyScalar(step));
+
+    const cx = getClampX(), cz = getClampZ();
+    next.x = THREE.MathUtils.clamp(next.x, cx.min, cx.max);
+    next.z = THREE.MathUtils.clamp(next.z, cz.min, cz.max);
+
+    camera.position.set(next.x, getCamY(), next.z);
+  }
+
+  // 少し先を注視して自然に
+  const ahead = walkTarget ?? controls.target;
+  controls.target.lerp(new THREE.Vector3(ahead.x, getCamY() * 0.6, ahead.z), 0.08);
 }
 
   renderer.render(scene, camera);
