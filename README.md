@@ -23,3 +23,40 @@ Web上で体験できる **簡易3Dショッピングモール** のプロトタ
    ```bash
    git clone https://github.com/EVERYSAN/vr-mall.git
    cd vr-mall
+
+2. 依存をインストール
+   ```bash
+   npm install
+
+3. 開発サーバーを起動
+   ```bash
+   npm run build
+   npm run preview
+- ブラウザで http://localhost:5173
+ を開く
+
+4. 本番ビルド
+   ```bash
+   npm run build
+   npm run preview
+
+## デモ
+
+- GitHub Pages 公開版:
+   👉 https://everysan.github.io/vr-mall/
+
+## ロードマップ
+
+- AIコンシェルジュ機能の実装（OpenAI API 経由）
+
+- モールの複数フロア化
+
+- VRヘッドセット（WebXR）対応
+
+- ECサイトAPIと連携した商品情報表示
+
+## ライセンス
+MIT
+
+
+   
